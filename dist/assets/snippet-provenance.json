@@ -1,0 +1,167 @@
+[
+  {
+    "repo": "devtrack",
+    "path": "services/journal.js",
+    "start": 199,
+    "end": 221,
+    "label": "Journal sync",
+    "title": "Timetable → journal synchronisation",
+    "note": "A stable source key and a scoped upsert update imported lessons instead of creating duplicates.",
+    "url": "https://github.com/krievinsss/devtrack/blob/735baff9c4f1be54ffb957b2f4c35f2c262d1939/services/journal.js",
+    "code": "        const sourceKey = `timetable:${lesson.date}:${lesson.id}:${lesson.period || 0}`;\n        await tx\n          .insert(journalEntries)\n          .values({\n            courseId: course.id,\n            source: \"timetable\",\n            sourceKey,\n            type: \"lesson\",\n            date: lesson.date,\n            startsAt: new Date(rigaDateTimeIso(lesson.date, lesson.start)),\n            endsAt: new Date(rigaDateTimeIso(lesson.date, lesson.end)),\n            timetableLessonId: lesson.id,\n            timetablePeriod: lesson.period || null,\n          })\n          .onConflictDoUpdate({\n            target: [journalEntries.courseId, journalEntries.sourceKey],\n            set: {\n              startsAt: new Date(rigaDateTimeIso(lesson.date, lesson.start)),\n              endsAt: new Date(rigaDateTimeIso(lesson.date, lesson.end)),\n              timetablePeriod: lesson.period || null,\n              updatedAt: new Date(),\n            },\n          });"
+  },
+  {
+    "repo": "devtrack",
+    "path": "lib/attendanceAutomation.js",
+    "start": 1,
+    "end": 19,
+    "label": "Room mapping",
+    "title": "Normalising external room names",
+    "note": "Different room labels are normalised before looking up an active classroom.",
+    "url": "https://github.com/krievinsss/devtrack/blob/735baff9c4f1be54ffb957b2f4c35f2c262d1939/lib/attendanceAutomation.js",
+    "code": "export function normalizeRoomName(value) {\n  return String(value || \"\")\n    .trim()\n    .toLocaleLowerCase(\"lv-LV\")\n    .replace(/^(classroom|room|telpa|kabinets)\\s*/u, \"\")\n    .replace(/^c[.\\s-]*(?=\\d)/u, \"\")\n    .replace(/[^\\p{L}\\p{N}]/gu, \"\");\n}\n\nexport function classroomForTimetableRoom(room, classrooms = []) {\n  const key = normalizeRoomName(room);\n  if (!key) return null;\n  return (\n    classrooms.find(\n      (classroom) =>\n        classroom.active !== false && normalizeRoomName(classroom.name) === key,\n    ) || null\n  );\n}"
+  },
+  {
+    "repo": "devtrack",
+    "path": "lib/attendanceAutomation.js",
+    "start": 21,
+    "end": 35,
+    "label": "Session timing",
+    "title": "Time boundaries + session identity",
+    "note": "A lesson is active from its start until, but excluding, its end. Session identity also checks classroom, group and start time.",
+    "url": "https://github.com/krievinsss/devtrack/blob/735baff9c4f1be54ffb957b2f4c35f2c262d1939/lib/attendanceAutomation.js",
+    "code": "export function isTimetableBlockActive(block, now = new Date()) {\n  const value = new Date(now).getTime();\n  return (\n    Number.isFinite(value) &&\n    new Date(block.startsAt).getTime() <= value &&\n    new Date(block.endsAt).getTime() > value\n  );\n}\n\nexport function sameScheduledSession(session, block, classroomId) {\n  return (\n    session.classroomId === classroomId &&\n    session.groupId === block.groupId &&\n    new Date(session.startsAt).getTime() === new Date(block.startsAt).getTime()\n  );"
+  },
+  {
+    "repo": "tagorit",
+    "path": "api/leads/index.js",
+    "start": 120,
+    "end": 138,
+    "label": "Commissions",
+    "title": "Sales → commission ledger",
+    "note": "Sale and team-override entries have separate types. Conflicts on lead, user and type are ignored on repeated calls.",
+    "url": "https://github.com/krievinsss/tagorit/blob/4afc7752576ce62844f05667ff68cbb8b1990703/api/leads/index.js",
+    "code": "async function createCommissions(q,lead,userCommissionCents){\n const ownerRows=await q`SELECT id,parent_user_id,payout_cents FROM users WHERE id=${lead.owner_id} LIMIT 1`;\n const owner=ownerRows[0];\n if(!owner)return;\n const saleAmount=userCommissionCents==null?Number(owner.payout_cents||0):Number(userCommissionCents||0);\n await q`INSERT INTO commission_ledger(lead_id,user_id,type,amount_cents,status)\n   VALUES(${lead.id},${owner.id},'SALE',${saleAmount},'PENDING')\n   ON CONFLICT (lead_id,user_id,type) DO NOTHING`;\n if(owner.parent_user_id){\n  const parentRows=await q`SELECT id,role,override_cents,active FROM users WHERE id=${owner.parent_user_id} LIMIT 1`;\n  const parent=parentRows[0];\n  if(parent?.role===\"team_lead\"&&parent.active&&Number(parent.override_cents||0)>0){\n   await q`INSERT INTO commission_ledger(lead_id,user_id,type,amount_cents,status)\n     VALUES(${lead.id},${parent.id},'TEAM_OVERRIDE',${Number(parent.override_cents||0)},'PENDING')\n     ON CONFLICT (lead_id,user_id,type) DO NOTHING`;\n  }\n }\n return saleAmount;\n}"
+  },
+  {
+    "repo": "tagorit",
+    "path": "api/leads/index.js",
+    "start": 39,
+    "end": 47,
+    "label": "Access rules",
+    "title": "Role-aware lead access",
+    "note": "This helper allows admins, owners and team leads whose direct report owns the lead.",
+    "url": "https://github.com/krievinsss/tagorit/blob/4afc7752576ce62844f05667ff68cbb8b1990703/api/leads/index.js",
+    "code": "async function canAccess(q,user,ownerId){\n if(user.role===\"admin\")return true;\n if(ownerId===user.id)return true;\n if(user.role===\"team_lead\"){\n  const rows=await q`SELECT 1 FROM users WHERE id=${ownerId} AND parent_user_id=${user.id} LIMIT 1`;\n  return !!rows[0];\n }\n return false;\n}"
+  },
+  {
+    "repo": "tagorit",
+    "path": "api/leads/index.js",
+    "start": 21,
+    "end": 37,
+    "label": "Reactivation",
+    "title": "Follow-up rules for lost leads",
+    "note": "Do-not-contact blocks reactivation. Other reasons use a cooldown or a validated future follow-up date.",
+    "url": "https://github.com/krievinsss/tagorit/blob/4afc7752576ce62844f05667ff68cbb8b1990703/api/leads/index.js",
+    "code": "function lostPolicy(reason,requestedDate){\n const r=String(reason||\"\").trim().toUpperCase();\n if(r===\"DO_NOT_CONTACT\")return{reason:r,doNotContact:true,reactivateAfter:null};\n if(r===\"CALL_LATER\"){\n  const date=String(requestedDate||\"\").slice(0,10);\n  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||date<=new Date().toISOString().slice(0,10))return null;\n  return{reason:r,doNotContact:false,reactivateAfter:date};\n }\n const days=lostCooldownDays[r];\n if(!days)return null;\n return{reason:r,doNotContact:false,reactivateAfter:plusDays(days)};\n}\nfunction reactivationEligible(l){\n if(l.status!==\"LOST\"||l.do_not_contact)return false;\n if(!l.reactivate_after)return false;\n return String(l.reactivate_after).slice(0,10)<=new Date().toISOString().slice(0,10);\n}"
+  },
+  {
+    "repo": "deskplan",
+    "path": "app/Http/Controllers/Api/ClassroomApiController.php",
+    "start": 648,
+    "end": 659,
+    "label": "Seat session",
+    "title": "Check-in → versioned state",
+    "note": "A seat session is created using UTC timestamps, the classroom version increments and the new state is returned.",
+    "url": "https://github.com/krievinsss/deskplan/blob/7450292b83264bfa50e8c6f5b4df0b64ef8299f8/app/Http/Controllers/Api/ClassroomApiController.php",
+    "code": "        // Pieraksts (DB: UTC)\n        SeatSession::create([\n            'classroom_id' => $classroom->id,\n            'desk_id' => (int) $data['desk_id'],\n            'student_name' => $data['name'],\n            'started_at' => $nowUtc,\n            'created_at' => $nowUtc,\n            'updated_at' => $nowUtc,\n        ]);\n\n        $classroom->bumpVersion();\n        return $this->state($r, $classroom);"
+  },
+  {
+    "repo": "deskplan",
+    "path": "app/Http/Controllers/Api/ClassroomApiController.php",
+    "start": 112,
+    "end": 120,
+    "label": "State version",
+    "title": "A compact classroom version endpoint",
+    "note": "The client can request a version and update timestamp without receiving the full classroom state.",
+    "url": "https://github.com/krievinsss/deskplan/blob/7450292b83264bfa50e8c6f5b4df0b64ef8299f8/app/Http/Controllers/Api/ClassroomApiController.php",
+    "code": "    public function version(Classroom $classroom)\n    {\n        abort_unless(optional($classroom->school)->active, 403);\n\n        return response()->json([\n            'version' => (int) $classroom->version,\n            'updatedAt' => ($classroom->updated_at?->timestamp) ?? now()->timestamp,\n        ]);\n    }"
+  },
+  {
+    "repo": "deskplan",
+    "path": "app/Http/Controllers/Api/ClassroomApiController.php",
+    "start": 619,
+    "end": 637,
+    "label": "Check-in rules",
+    "title": "Roster + existing-session checks",
+    "note": "The request checks the active roster and existing open sessions before creating a check-in.",
+    "url": "https://github.com/krievinsss/deskplan/blob/7450292b83264bfa50e8c6f5b4df0b64ef8299f8/app/Http/Controllers/Api/ClassroomApiController.php",
+    "code": "        // ja ir grupa — vārdam jābūt sarakstā\n        $allowed = $this->getActiveStudents($classroom);\n        if (!empty($allowed)) {\n            $want = mb_strtolower($data['name'], 'UTF-8');\n            $ok = collect($allowed)->contains(fn($n) => mb_strtolower($n, 'UTF-8') === $want);\n            if (!$ok) {\n                return response()->json(['error' => 'not_in_group', 'message' => 'Šis vārds nav pievienots šīs stundas grupai.'], 422);\n            }\n        }\n\n        // Aizliegts dubult-check-in šai personai vienā periodā\n        $lower = mb_strtolower($data['name'], 'UTF-8');\n        $already = $classroom->sessions()\n            ->whereNull('ended_at')\n            ->whereRaw('LOWER(student_name)=?', [$lower])\n            ->exists();\n        if ($already) {\n            return response()->json(['error' => 'already_checked_in', 'message' => 'Šis skolēns jau ir pierakstīts šai stundai.'], 409);\n        }"
+  },
+  {
+    "repo": "lsm",
+    "path": "app/Services/GuideService.php",
+    "start": 98,
+    "end": 113,
+    "label": "Overlap check",
+    "title": "Programme interval validation",
+    "note": "Strict interval comparisons reject overlapping programmes while allowing adjacent programmes to share a boundary.",
+    "url": "https://github.com/krievinsss/lsm/blob/4bb6a97ab6ae6ab26ba5fefe69756cb1889cb520/app/Services/GuideService.php",
+    "code": "    public function ensureNoOverlap(int $channelNr, Carbon $startsAt, Carbon $endsAt): void\n    {\n        $overlapExists = Guide::query()\n            ->where('channel_nr', $channelNr)\n            ->where(function ($query) use ($startsAt, $endsAt) {\n                $query->where('starts_at', '<', $endsAt)\n                    ->where('ends_at', '>', $startsAt);\n            })\n            ->exists();\n\n        if ($overlapExists) {\n            throw ValidationException::withMessages([\n                'starts_at' => 'Programmas ieraksts pārklājas ar esošu ierakstu.',\n            ]);\n        }\n    }"
+  },
+  {
+    "repo": "lsm",
+    "path": "app/Services/GuideService.php",
+    "start": 115,
+    "end": 121,
+    "label": "TV day",
+    "title": "A broadcast day starts at 06:00",
+    "note": "The service builds a 24-hour interval from 06:00 on the selected date to 06:00 the following day.",
+    "url": "https://github.com/krievinsss/lsm/blob/4bb6a97ab6ae6ab26ba5fefe69756cb1889cb520/app/Services/GuideService.php",
+    "code": "    public function tvDayBounds(string $date): array\n    {\n        $from = Carbon::parse($date . ' 06:00:00');\n        $to = (clone $from)->addDay();\n\n        return [$from, $to];\n    }"
+  },
+  {
+    "repo": "lsm",
+    "path": "app/Services/GuideService.php",
+    "start": 123,
+    "end": 142,
+    "label": "End times",
+    "title": "Programme ends derived from the next start",
+    "note": "The display end time uses the next programme start, falling back to the original end time when there is no next programme.",
+    "url": "https://github.com/krievinsss/lsm/blob/4bb6a97ab6ae6ab26ba5fefe69756cb1889cb520/app/Services/GuideService.php",
+    "code": "    public function withAdjustedEndTimes(Collection $guides, int $channelNr): Collection\n    {\n        $guides = $guides->values();\n\n        foreach ($guides as $index => $guide) {\n            $nextGuide = $guides->get($index + 1)\n                ?? Guide::query()\n                    ->where('channel_nr', $channelNr)\n                    ->where('starts_at', '>', $guide->starts_at)\n                    ->orderBy('starts_at')\n                    ->first();\n\n            $guide->setAttribute(\n                'adjusted_ends_at',\n                $nextGuide ? $nextGuide->starts_at : $guide->ends_at\n            );\n        }\n\n        return $guides;\n    }"
+  },
+  {
+    "repo": "songs",
+    "path": "src/utils/matcher.ts",
+    "start": 56,
+    "end": 76,
+    "label": "Fuzzy match",
+    "title": "Diacritics + typo-tolerant answers",
+    "note": "Answers are normalised, compared for inclusion and checked with a bounded Levenshtein distance.",
+    "url": "https://github.com/krievinsss/songs/blob/1a58fcfc351a71499db247aa1d38c10eb9933d55/src/utils/matcher.ts",
+    "code": "export function checkMatch(guess: string, target: string, normalizedTargetExtra?: string): boolean {\n  const normGuess = normalizeLatvianText(guess);\n  const normTarget = normalizeLatvianText(target);\n  const normExtra = normalizedTargetExtra ? normalizeLatvianText(normalizedTargetExtra) : '';\n\n  if (!normGuess || !normTarget) return false;\n\n  // Exact or word inclusion\n  if (normGuess === normTarget) return true;\n  if (normExtra && normExtra.includes(normGuess)) return true;\n\n  // If guess contains target or target contains guess (length >= 4)\n  if (normGuess.length >= 4 && normTarget.includes(normGuess)) return true;\n  if (normTarget.length >= 4 && normGuess.includes(normTarget)) return true;\n\n  // Levenshtein fuzzy distance for typos\n  const distance = levenshteinDistance(normGuess, normTarget);\n  const maxAllowedDistance = Math.min(3, Math.floor(normTarget.length / 3));\n\n  return distance <= maxAllowedDistance;\n}"
+  },
+  {
+    "repo": "songs",
+    "path": "src/utils/matcher.ts",
+    "start": 6,
+    "end": 24,
+    "label": "Normalisation",
+    "title": "Making Latvian answers comparable",
+    "note": "Latvian diacritics, punctuation and repeated spaces are normalised before comparing player answers.",
+    "url": "https://github.com/krievinsss/songs/blob/1a58fcfc351a71499db247aa1d38c10eb9933d55/src/utils/matcher.ts",
+    "code": "export function normalizeLatvianText(text: string): string {\n  if (!text) return '';\n  return text\n    .toLowerCase()\n    .replace(/[āáàâä]/g, 'a')\n    .replace(/[čç]/g, 'c')\n    .replace(/[ēéèêë]/g, 'e')\n    .replace(/[ģğ]/g, 'g')\n    .replace(/[īíìîï]/g, 'i')\n    .replace(/[ķ]/g, 'k')\n    .replace(/[ļ]/g, 'l')\n    .replace(/[ņ]/g, 'n')\n    .replace(/[šś]/g, 's')\n    .replace(/[ūúùûü]/g, 'u')\n    .replace(/[žźż]/g, 'z')\n    .replace(/[^a-z0-9\\s]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}"
+  },
+  {
+    "repo": "songs",
+    "path": "server.ts",
+    "start": 34,
+    "end": 46,
+    "label": "Live state",
+    "title": "Shared game state over server-sent events",
+    "note": "The server writes the same JSON game state to its connected SSE clients. This excerpt demonstrates the broadcast mechanism.",
+    "url": "https://github.com/krievinsss/songs/blob/1a58fcfc351a71499db247aa1d38c10eb9933d55/server.ts",
+    "code": "// SSE Clients for real-time synchronization\nconst sseClients: express.Response[] = [];\n\nfunction broadcastState() {\n  const data = `data: ${JSON.stringify(gameState)}\\n\\n`;\n  sseClients.forEach((res) => {\n    try {\n      res.write(data);\n    } catch {\n      // Ignore disconnected\n    }\n  });\n}"
+  }
+]
